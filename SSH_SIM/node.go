@@ -9,7 +9,7 @@ type Node struct {
 	DeviceId string
 	Host     string // IP:PORT 127.0.0.1:22
 	Port     uint16 // 0-65535 // port range 1024 to 49151.
-	Command  string // docker run -exec ss
+	Command  []byte // docker run -exec ss
 	Result   []string
 }
 

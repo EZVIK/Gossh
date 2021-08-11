@@ -49,6 +49,6 @@ func main() {
 
 	sw.Session.Wait()
 
-	//sw.PrintOutput()
+	sw.PrintOutput()
 	//sw.PrintErr()
 }
