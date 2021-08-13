@@ -106,20 +106,21 @@ func Input(ctx *fiber.Ctx) error {
 	}
 
 	var rawSC = new(SSHClient)
-
+	rawSC.settings = device
 	if sc, ok := CONNMAP[device.Host]; !ok {
-		rawSC.Login(device)
+		rawSC.Login()
 	} else {
 		rawSC = sc
 	}
 
 	cmds := strings.Split(n.Command, ";:;")
 
-	sb := ""
-	buf := make([]byte, 128)
 	res := make([]string, 0)
 
+	// input & output
 	for _, cmd := range cmds {
+		sb := ""
+		buf := make([]byte, 128)
 		_, err = rawSC.terminals.stdin.Write([]byte(cmd + "\r\n"))
 		if err != nil {
 			fmt.Println(err)
@@ -158,20 +159,21 @@ func Input(ctx *fiber.Ctx) error {
 func (t *SSHTerminal) interactiveSession(device SSHDevice) error {
 
 	// close
-	defer func() {
-		if t.exitMsg == "" {
-			fmt.Fprintln(os.Stdout, "the connection was closed on the remote side on ", time.Now().Format(time.RFC822))
-		} else {
-			fmt.Fprintln(os.Stdout, t.exitMsg)
-		}
-	}()
+	//defer func() {
+	//	if t.exitMsg == "" {
+	//		fmt.Fprintln(os.Stdout, "the connection was closed on the remote side on ", time.Now().Format(time.RFC822))
+	//	} else {
+	//		fmt.Fprintln(os.Stdout, t.exitMsg)
+	//	}
+	//}()
 
 	fd := 0
-	state, err := terminal.MakeRaw(fd)
+	_, err := terminal.MakeRaw(fd)
 	if err != nil {
 		return err
 	}
-	defer terminal.Restore(fd, state)
+
+	//defer terminal.Restore(fd, state)
 
 	//termWidth, termHeight, err := terminal.GetSize(fd)
 	termWidth, termHeight := 500, 30
@@ -224,7 +226,7 @@ func (t *SSHTerminal) interactiveSession(device SSHDevice) error {
 		}
 	}
 
-	go t.Session.Wait()
+	//go t.Session.Wait()
 
 	return nil
 }
@@ -236,7 +238,8 @@ func (s *SSHClient) New() error {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer session.Close()
+	//defer terminal.Restore(fd, state)
+	//defer session.Close()
 
 	s.terminals = &SSHTerminal{
 		Session: session,
@@ -245,8 +248,8 @@ func (s *SSHClient) New() error {
 	return s.terminals.interactiveSession(s.settings)
 }
 
-func (s *SSHClient) Login(dev SSHDevice) (err error) {
-
+func (s *SSHClient) Login() (err error) {
+	dev := s.settings
 	CONNMAP[dev.Host] = s
 
 	sshConfig := &ssh.ClientConfig{
@@ -259,11 +262,10 @@ func (s *SSHClient) Login(dev SSHDevice) (err error) {
 	}
 
 	// connect & save client
-	c, err := ssh.Dial("tcp", dev.Host+":"+strconv.Itoa(int(dev.Port)), sshConfig)
+	s.client, err = ssh.Dial("tcp", dev.Host+":"+strconv.Itoa(int(dev.Port)), sshConfig)
 	if err != nil {
 		return err
 	}
-	s.client = c
 
 	return s.New()
 }
