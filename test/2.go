@@ -23,7 +23,7 @@ func main() {
 		ID: "31602dcfcba525de43a6a70ae72f2198",
 		//TaskId: "259cf88510e0abd27a317a1cc025d1e3",
 		//DeviceId: "89c23f5bfad2be62491038f9c4007d3d",
-		//Command: "ls -l /home/nicetry",
+		//Command: "ls -service /home/nicetry",
 		Host:     "159.75.82.148",
 		Port:     "22",
 		Username: "root",
@@ -42,7 +42,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	commands := []string{"ls -l", "cd /home", "ls -l"}
+	commands := []string{"ls -service", "cd /home", "ls -service"}
 	if err := sw.SendConfigSet(commands); err != nil {
 		log.Fatal(err)
 	}

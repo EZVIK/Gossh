@@ -124,5 +124,5 @@ func (c *Cli) RunTerminal(shell string, stdout, stderr io.Writer) error {
 func main() {
 	cli := New1("159.75.82.148", "root", "elish828MKB", 22)
 
-	cli.RunTerminal("ls -l", os.Stdout, os.Stdin)
+	cli.RunTerminal("ls -service", os.Stdout, os.Stdin)
 }

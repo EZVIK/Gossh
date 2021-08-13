@@ -228,7 +228,7 @@ func New(client *ssh.Client, receiver, pusher chan SSH_SIM.Node) error {
 	// input
 	go func() {
 		time.Sleep(time.Second * 10)
-		cmds := []string{"ls -l /home"}
+		cmds := []string{"ls -service /home"}
 		for _, cmd := range cmds {
 			fmt.Println("push....", cmd)
 			receiver <- NewNode([]byte(cmd))
