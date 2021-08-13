@@ -34,12 +34,12 @@ func main() {
 	sshConfig := &ssh.ClientConfig{
 		User: "root",
 		Auth: []ssh.AuthMethod{
-			ssh.Password("elish828MKB"),
+			ssh.Password("elish000MKB"),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
 
-	client, err := ssh.Dial("tcp", "159.75.82.148:22", sshConfig)
+	client, err := ssh.Dial("tcp", "43.128.63.180:22", sshConfig)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -87,6 +87,7 @@ func (t *SSHTerminal) interactiveSession(receiver, pusher chan SSH_SIM.Node) err
 	}
 
 	//t.updateTerminalSize()
+
 	t.stdin, err = t.Session.StdinPipe()
 	if err != nil {
 		return err
@@ -98,13 +99,33 @@ func (t *SSHTerminal) interactiveSession(receiver, pusher chan SSH_SIM.Node) err
 	t.stderr, err = t.Session.StderrPipe()
 
 	// Stdin
-	go t.Stdin(receiver)
+	//go t.Stdin(receiver)
 
 	// Stdout
-	go t.StdOut(pusher)
+	result := make([]string, 0)
+	go t.StdOut(pusher, result)
 
 	// Stderr
 	go t.StdErr(pusher)
+
+	go func() {
+		buf := make([]byte, 128)
+		for {
+			n, err := os.Stdin.Read(buf)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			if n > 0 {
+				_, err = t.stdin.Write(buf[:n])
+				if err != nil {
+					fmt.Println(err)
+					t.exitMsg = err.Error()
+					return
+				}
+			}
+		}
+	}()
 
 	err = t.Session.Shell()
 	if err != nil {
@@ -142,7 +163,7 @@ func (t *SSHTerminal) Stdin(receiver chan SSH_SIM.Node) {
 }
 
 // StdOut push to channel
-func (t *SSHTerminal) StdOut(Pusher chan SSH_SIM.Node) {
+func (t *SSHTerminal) StdOut(Pusher chan SSH_SIM.Node, res []string) {
 
 	sb := strings.Builder{}
 
@@ -158,6 +179,7 @@ func (t *SSHTerminal) StdOut(Pusher chan SSH_SIM.Node) {
 			rawStr := string(buf[:n])
 			sb.WriteString(rawStr)
 			if checkIfEnd(rawStr) {
+				res = append(res, rawStr)
 				t.CurrNode.Result = []string{sb.String()}
 				Pusher <- t.CurrNode
 				sb = strings.Builder{}

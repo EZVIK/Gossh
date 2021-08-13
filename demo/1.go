@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -19,16 +20,18 @@ type SSHTerminal struct {
 	stderr  io.Reader
 }
 
+const EndingArr = "#"
+
 func main() {
 	sshConfig := &ssh.ClientConfig{
 		User: "root",
 		Auth: []ssh.AuthMethod{
-			ssh.Password("elish828MKB"),
+			ssh.Password("elish000MKB"),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
 
-	client, err := ssh.Dial("tcp", "159.75.82.148:22", sshConfig)
+	client, err := ssh.Dial("tcp", "43.128.63.180:22", sshConfig)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -100,22 +103,24 @@ func (t *SSHTerminal) interactiveSession() error {
 	}
 	defer terminal.Restore(fd, state)
 
-	termWidth, termHeight, err := terminal.GetSize(fd)
+	//termWidth, termHeight, err := terminal.GetSize(fd)
+	termWidth, termHeight := 500, 30
+
 	if err != nil {
 		return err
 	}
 
 	termType := os.Getenv("TERM")
 	if termType == "" {
-		termType = "xterm-256color"
+		termType = "xterm"
 	}
 
-	err = t.Session.RequestPty(termType, termHeight, termWidth, ssh.TerminalModes{})
+	err = t.Session.RequestPty("", termHeight, termWidth, ssh.TerminalModes{})
 	if err != nil {
 		return err
 	}
 
-	t.updateTerminalSize()
+	//t.updateTerminalSize()
 
 	t.stdin, err = t.Session.StdinPipe()
 	if err != nil {
@@ -127,8 +132,36 @@ func (t *SSHTerminal) interactiveSession() error {
 	}
 	t.stderr, err = t.Session.StderrPipe()
 
-	go io.Copy(os.Stderr, t.stderr)
-	go io.Copy(os.Stdout, t.stdout)
+	//go io.Copy(os.Stderr, t.stderr)
+	//go io.Copy(os.Stdout, t.stdout)
+
+	// output
+	go func() {
+		buf := make([]byte, 128)
+		sb := ""
+		for {
+			n, err := t.stdout.Read(buf)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			str := string(buf[:n])
+
+			if n == 1 {
+				fmt.Print(str)
+				continue
+			} else {
+				sb = sb + str
+			}
+
+			if checkIfEnd(str) {
+				fmt.Print(sb)
+				sb = ""
+			}
+
+		}
+	}()
+
 	go func() {
 		buf := make([]byte, 128)
 		for {
@@ -172,4 +205,16 @@ func New(client *ssh.Client) error {
 	}
 
 	return s.interactiveSession()
+}
+
+// check if output end
+func checkIfEnd(str string) bool {
+	str = strings.TrimRight(str, " ")
+	ends := strings.Split(EndingArr, ",")
+	for _, end := range ends {
+		if strings.Index(str, end) != -1 {
+			return true
+		}
+	}
+	return false
 }
