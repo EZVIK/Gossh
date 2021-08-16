@@ -7,34 +7,38 @@ import (
 )
 
 type SSHClient struct {
-	ID     string
-	client *ssh.Client
-	shll   *Shell
-	device SSHDevice
+	ID       string
+	client   *ssh.Client
+	terminal *Terminal
+	device   *SSHDevice
+}
+
+func NewClient(device SSHDevice) (*SSHClient, error) {
+	s := new(SSHClient)
+	s.SetDevice(device)
+	return s, nil
 }
 
 func (s *SSHClient) SetDevice(device SSHDevice) {
-	s.device = device
+	s.device = &device
 }
 
 // New Session
-func (s SSHClient) New() error {
-
+func (s *SSHClient) New() error {
 	session, err := s.client.NewSession()
 	if err != nil {
 		log.Fatal(err)
 	}
-	//defer terminal.Restore(fd, state)
-	//defer session.Close()
 
-	s.shll = &Shell{
+	s.terminal = &Terminal{
 		Session: session,
+		device:  s.device,
 	}
 
-	return s.shll.interactiveSession(s.device)
+	return s.terminal.interactiveSession(s.device)
 }
 
-func (s SSHClient) Login() (err error) {
+func (s *SSHClient) Login() (err error) {
 
 	sshConfig := &ssh.ClientConfig{
 		User: s.device.username,

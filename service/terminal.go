@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-type Shell struct {
+type Terminal struct {
 	Session *ssh.Session
 	exitMsg string
 	stdout  io.Reader
@@ -20,7 +20,7 @@ type Shell struct {
 }
 
 // init ssh Session setting
-func (t Shell) interactiveSession(device SSHDevice) error {
+func (t *Terminal) interactiveSession(device *SSHDevice) error {
 
 	fd := 0
 	_, err := terminal.MakeRaw(fd)
@@ -73,49 +73,58 @@ func (t Shell) interactiveSession(device SSHDevice) error {
 			sb = sb + strr
 
 			if device.checkIfEnd(strr) {
-				fmt.Println(sb)
+				//fmt.Println(sb)
 				break
 			}
 		}
 	}
-
-	//go t.Session.Wait()
-
 	return nil
 }
 
 // Run cmd return Output
-func (t Shell) Run(cmd CMD) (ans []string, err error) {
+func (t *Terminal) Run(commands []string) (ans map[string][]string, err error) {
+	ans = make(map[string][]string, 0)
 
 	// input & output
-	sb := ""
-	buf := make([]byte, 128)
-	_, err = t.stdin.Write([]byte(cmd.Command + "\r\n"))
-	if err != nil {
-		fmt.Println(err)
-		//t.exitMsg = err.Error()
-		return
-	}
+	for _, cmd := range commands {
 
-	for {
-		n, Outerr := t.stdout.Read(buf)
-		if Outerr != nil {
-			fmt.Println("StdOut err:", Outerr)
-
+		sb := ""
+		buf := make([]byte, 128)
+		_, err = t.stdin.Write([]byte(cmd + "\r\n"))
+		if err != nil {
+			fmt.Println(err)
+			//t.exitMsg = err.Error()
 			return
 		}
 
-		if n > 0 {
-			rawStr := string(buf[:n])
-			sb = sb + fmt.Sprintf("%s", rawStr)
-			if t.device.checkIfEnd(rawStr) {
-				break
+		// waiting for end char matching
+		for {
+			n, stdoutErr := t.stdout.Read(buf)
+			if stdoutErr != nil {
+				fmt.Println("StdOut err:", stdoutErr)
+				return
+			}
+
+			if n > 0 {
+				rawStr := string(buf[:n])
+				sb = sb + fmt.Sprintf("%s", rawStr)
+
+				// check stdout finished output
+				if t.device.checkIfEnd(rawStr) {
+					break
+				}
 			}
 		}
-	}
 
-	ans = strings.Split(sb, "\r\n")
-	ans = ans[1 : len(ans)-2]
+		// split with enter
+		tmp := strings.Split(sb, "\r\n")
+
+		// delete prefix & command
+		tmp = tmp[1 : len(tmp)-2]
+
+		// append to result arr
+		ans[cmd] = tmp
+	}
 
 	return
 }

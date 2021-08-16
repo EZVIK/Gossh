@@ -6,16 +6,7 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
-	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/terminal"
-	"io"
-	"log"
-	"os"
-	"os/signal"
-	"strconv"
 	"strings"
-	"syscall"
-	"time"
 )
 
 //var TERMINAL *service.SSHTerminal
@@ -30,12 +21,15 @@ func main() {
 		fmt.Println("MAIN ERROR...", err)
 		return
 	}
+
+	runtimeMap.CloseAll()
 }
 
 func Router(app *fiber.App) {
 	app.Use(cors.New())
 
 	app.Post("/run", Input)
+	app.Post("/currConn", GetCurrConnMap)
 }
 
 // Input & output
@@ -47,23 +41,29 @@ func Input(ctx *fiber.Ctx) error {
 		return ctx.JSON(NewRes(err.Error()))
 	}
 
-	c, err := runtimeMap.Get(n.IP)
-
-	cmds := strings.Split(n.Command, ";:;")
+	commands := strings.Split(n.Command, ";:;")
 
 	//  TODO 2021/8/13 6:08 PM
+	ans, err := runtimeMap.RunCmd(n.IP, commands)
 
-	return ctx.JSON(NewRes(res))
-	//return ctx.JSON(NewRes(ans))
+	if err != nil {
+		return ctx.JSON(NewRes(err.Error()))
+	}
+
+	return ctx.JSON(NewRes(ans))
 }
+
+func GetCurrConnMap(ctx *fiber.Ctx) error {
+	return ctx.JSON(NewRes(runtimeMap.GetConnList()))
+}
+
+// BodyParse http method
 
 type Response struct {
 	Code int         `json:"code"`
 	Msg  string      `json:"msg"`
 	Data interface{} `json:"data,omitempty"`
 }
-
-// BodyParse http method
 
 func BodyParse(ctx *fiber.Ctx, dto interface{}) error {
 	_ = ctx.BodyParser(dto)        // 解析参数

@@ -14,7 +14,7 @@ type SSHDevice struct {
 	endingArr  []byte
 }
 
-func NewDevice(host, username, pass, termType, port string, TermHeight, TermWidth int, LoginLog bool) SSHDevice {
+func NewDevice(host, username, pass, termType, port string, TermHeight, TermWidth int, LoginLog bool, endingArr []byte) SSHDevice {
 	d := SSHDevice{}
 	d.host = host
 	d.username = username
@@ -24,6 +24,7 @@ func NewDevice(host, username, pass, termType, port string, TermHeight, TermWidt
 	d.loginLog = LoginLog
 	d.termType = termType
 	d.port = port
+	d.endingArr = endingArr
 	return d
 }
 
