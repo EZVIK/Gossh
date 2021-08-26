@@ -1,22 +1,18 @@
 package service
 
 import (
+	"fmt"
 	"golang.org/x/crypto/ssh"
 	"log"
 	"time"
 )
 
 type SSHClient struct {
-	ID       string
-	client   *ssh.Client
-	terminal *Terminal
-	device   *SSHDevice
-}
-
-func NewClient(device SSHDevice) (*SSHClient, error) {
-	s := new(SSHClient)
-	s.SetDevice(device)
-	return s, nil
+	ID        string
+	client    *ssh.Client
+	terminal  *Terminal
+	device    *SSHDevice
+	closeTime time.Time
 }
 
 func (s *SSHClient) SetDevice(device SSHDevice) {
@@ -30,8 +26,9 @@ func (s *SSHClient) New() error {
 		log.Fatal(err)
 	}
 
+	// new Terminal
 	s.terminal = &Terminal{
-		Session: session,
+		session: session,
 		device:  s.device,
 	}
 
@@ -46,7 +43,7 @@ func (s *SSHClient) Login() (err error) {
 			ssh.Password(s.device.password),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         time.Second * 300,
+		//Timeout:         time.Second * 300,
 	}
 
 	// connect & save client
@@ -56,4 +53,10 @@ func (s *SSHClient) Login() (err error) {
 	}
 
 	return s.New()
+}
+
+func (s *SSHClient) SetTimeOut(duration time.Duration) error {
+	s.closeTime = time.Now().Add(duration)
+	fmt.Println(s.closeTime.Format("T2006-01-02 15:04:05"))
+	return nil
 }

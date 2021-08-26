@@ -1,6 +1,9 @@
 package service
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 type SSHDevice struct {
 	host       string
@@ -12,9 +15,10 @@ type SSHDevice struct {
 	termWidth  int
 	loginLog   bool
 	endingArr  []byte
+	timeout    time.Duration
 }
 
-func NewDevice(host, username, pass, termType, port string, TermHeight, TermWidth int, LoginLog bool, endingArr []byte) SSHDevice {
+func NewDevice(host, username, pass, termType, port string, TermHeight, TermWidth int, LoginLog bool, endingArr []byte, timeout int) SSHDevice {
 	d := SSHDevice{}
 	d.host = host
 	d.username = username
@@ -25,6 +29,7 @@ func NewDevice(host, username, pass, termType, port string, TermHeight, TermWidt
 	d.termType = termType
 	d.port = port
 	d.endingArr = endingArr
+	d.timeout = time.Second * time.Duration(timeout)
 	return d
 }
 

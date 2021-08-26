@@ -5,17 +5,17 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/terminal"
 	"io"
+	"log"
 	"strings"
 	"time"
 )
 
 type Terminal struct {
-	Session *ssh.Session
+	session *ssh.Session
 	exitMsg string
 	stdout  io.Reader
 	stdin   io.Writer
 	stderr  io.Reader
-	timeout time.Duration
 	device  *SSHDevice
 }
 
@@ -28,93 +28,56 @@ func (t *Terminal) interactiveSession(device *SSHDevice) error {
 		return err
 	}
 
-	termWidth, termHeight := 500, 30
+	// termWidth, termHeight affect to the output strings length, width
+	// termType affect to the style of the
+	termWidth, termHeight, termType := 500, 30, "vt220"
 
+	//
+	err = t.session.RequestPty(termType, termHeight, termWidth, ssh.TerminalModes{})
 	if err != nil {
 		return err
 	}
 
-	termType := "vt220"
-
-	err = t.Session.RequestPty(termType, termHeight, termWidth, ssh.TerminalModes{})
+	// redirect std
+	t.stdin, err = t.session.StdinPipe()
 	if err != nil {
 		return err
 	}
-
-	//t.updateTerminalSize()
-
-	// redirect
-	t.stdin, err = t.Session.StdinPipe()
+	t.stdout, err = t.session.StdoutPipe()
 	if err != nil {
 		return err
 	}
-	t.stdout, err = t.Session.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	t.stderr, err = t.Session.StderrPipe()
+	t.stderr, err = t.session.StderrPipe()
 
-	err = t.Session.Shell()
+	err = t.session.Shell()
 	if err != nil {
 		return err
 	}
 
 	// filtering login msg
+	// if loginLog is false, the login msg will send with the first response
 	if device.loginLog {
-		sb := ""
-		for {
-			buf := make([]byte, 128)
-			n, Outerr := t.stdout.Read(buf)
-			if Outerr != nil {
-				fmt.Println("StdOut err:", Outerr)
-			}
-			//Last failed login: Thu Aug 12 15:58:51 CST 2021 from 222.187.232.205 on ssh:notty\r\n There were 2 failed login attempts since the
-			strr := string(buf[:n])
-			sb = sb + strr
-
-			if device.checkIfEnd(strr) {
-				//fmt.Println(sb)
-				break
-			}
-		}
+		t.Read()
 	}
+
 	return nil
 }
 
 // Run cmd return Output
 func (t *Terminal) Run(commands []string) (ans map[string][]string, err error) {
+
+	// data result set
 	ans = make(map[string][]string, 0)
 
 	// input & output
 	for _, cmd := range commands {
 
-		sb := ""
-		buf := make([]byte, 128)
-		_, err = t.stdin.Write([]byte(cmd + "\r\n"))
-		if err != nil {
-			fmt.Println(err)
-			//t.exitMsg = err.Error()
-			return
+		// write cmd
+		if err = t.Write(cmd); err != nil {
+			ans[cmd] = []string{}
 		}
 
-		// waiting for end char matching
-		for {
-			n, stdoutErr := t.stdout.Read(buf)
-			if stdoutErr != nil {
-				fmt.Println("StdOut err:", stdoutErr)
-				return
-			}
-
-			if n > 0 {
-				rawStr := string(buf[:n])
-				sb = sb + fmt.Sprintf("%s", rawStr)
-
-				// check stdout finished output
-				if t.device.checkIfEnd(rawStr) {
-					break
-				}
-			}
-		}
+		sb := t.Read()
 
 		// split with enter
 		tmp := strings.Split(sb, "\r\n")
@@ -127,4 +90,57 @@ func (t *Terminal) Run(commands []string) (ans map[string][]string, err error) {
 	}
 
 	return
+}
+
+// Write command in stdin
+func (t *Terminal) Write(cmd string) error {
+
+	//  \r\n simulate the "enter"
+	_, err := t.stdin.Write([]byte(cmd + "\r\n"))
+
+	return err
+}
+
+// Read for Std
+func (t *Terminal) Read() string {
+	timer1 := time.NewTicker(t.device.timeout)
+	ans := ""
+
+	for {
+		select {
+		// Timeout timer, break loop when timer is <-
+		case <-timer1.C:
+			return ans
+		// continue read from std
+		default:
+			read, err := t.readOnce()
+			if err != nil {
+				log.Fatal(err)
+			}
+			ans += read
+
+			// check stdout finished output
+			if t.device.checkIfEnd(read) {
+				return ans
+			}
+		}
+	}
+}
+
+// ReadFrom stdout once
+func (t *Terminal) readOnce() (string, error) {
+	ans := ""
+	buf := make([]byte, 128)
+	n, stdoutErr := t.stdout.Read(buf)
+	if stdoutErr != nil {
+		return ans, stdoutErr
+	}
+
+	if n > 0 {
+		rawStr := string(buf[:n])
+		ans = ans + fmt.Sprintf("%s", rawStr)
+		return ans, nil
+	}
+
+	return "", nil
 }
