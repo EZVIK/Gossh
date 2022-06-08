@@ -1,17 +1,19 @@
-package core
+package sshx
 
 import (
 	"errors"
 	"fmt"
 	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/terminal"
 	"io"
-	"os"
 	"strings"
 	"time"
 )
 
-var defaultTimeout = time.Duration(10) * time.Second
+var (
+	defaultTimeout = time.Duration(10) * time.Second
+
+	defaultReadGapTime = time.Duration(10) * time.Millisecond
+)
 
 type Gossh struct {
 	host       string
@@ -29,28 +31,41 @@ type Gossh struct {
 	stdout io.Reader
 	stderr io.Reader
 
-	Options
+	Option
 }
 
 type CliCommands struct {
 	Command []string
 	Timeout time.Duration
+	//Option
 }
 
-type Options struct {
+//type Option struct {
+//
+//	// if enable cli output will with user prefix
+//	// like [root@VM-12-14-centos ~]#
+//	WithUserPrefix bool
+//
+//	// process will cut the output acording to this variable
+//	// like normal user [root@VM-12-14-centos ~]# ,'#'
+//	// like root   user [root@VM-12-14-centos ~]# ,'#'
+//	// When the result ends with '#', the result is returned
+//	OutputCompletedBytes map[string]string
+//
+//	// time of waiting Cli stdout
+//	CliTimeout time.Duration
+//
+//	// gap time of read cli stdout
+//	ReadGapTime time.Duration
+//}
 
-	// if enable cli output will with user prefix
-	// like [root@VM-12-14-centos ~]#
-	WithUserPrefix bool
+// NewSSHClient return Gossh
+func NewSSHClient(host string, port int, cfg *ssh.ClientConfig, opts ...Option) *Gossh {
 
-	// process will cut the output acording to this variable
-	// like normal user [root@VM-12-14-centos ~]# ,'#'
-	// like root   user [root@VM-12-14-centos ~]# ,'#'
-	// When the result ends with '#', the result is returned
-	OutputCompletedBytes map[string]string
-}
-
-func NewSSHClient(host string, port int, cfg *ssh.ClientConfig) *Gossh {
+	//var opt options
+	//for _, o := range opts {
+	//	o(&opt)
+	//}
 
 	return &Gossh{
 		host:       host,
@@ -61,10 +76,12 @@ func NewSSHClient(host string, port int, cfg *ssh.ClientConfig) *Gossh {
 }
 
 // Connect to the remote server
+// return login text
 func (g *Gossh) Connect() (string, error) {
 
 	var err error
 
+	// create connection
 	g.client, err = ssh.Dial("tcp", fmt.Sprintf("%s:%d", g.host, g.port), g.config)
 	if err != nil {
 		return "", errors.New(fmt.Sprintf("Failed to dial: " + err.Error()))
@@ -75,7 +92,8 @@ func (g *Gossh) Connect() (string, error) {
 		return "", errors.New(fmt.Sprintf("Failed to create session: " + err.Error()))
 	}
 
-	if err := redirectStd(g); err != nil {
+	// redirect std
+	if err = redirectStd(g); err != nil {
 		return "", err
 	}
 
@@ -84,6 +102,7 @@ func (g *Gossh) Connect() (string, error) {
 	return loginInfo, nil
 }
 
+// Close connection
 func (g *Gossh) Close() error {
 
 	if g.session != nil {
@@ -96,11 +115,15 @@ func (g *Gossh) Close() error {
 	return nil
 }
 
-func (g *Gossh) Exec(commands CliCommands) ([]string, error) {
+// Exec CLiCommands
+// return multi result
+func (g *Gossh) Exec(commands CliCommands) (map[string][]string, error) {
 
-	var results = make([]string, len(commands.Command))
+	var results = make(map[string][]string, len(commands.Command))
 
-	results, err := g.run(commands)
+	results, err := g.run(commands, func(s string) []string {
+		return strings.Split(s, "\r\n")
+	})
 
 	if err != nil {
 		return nil, err
@@ -109,20 +132,23 @@ func (g *Gossh) Exec(commands CliCommands) ([]string, error) {
 	return results, nil
 }
 
-func (g *Gossh) run(commands CliCommands) ([]string, error) {
+// run commands and read result from stdout
+func (g *Gossh) run(commands CliCommands, textProcessFunc func(string) []string) (map[string][]string, error) {
 
-	results := make([]string, 0)
+	results := make(map[string][]string, 0)
 	for _, cmd := range commands.Command {
 
+		// input cli
 		_, err := g.stdin.Write([]byte(cmd + "\n"))
 		if err != nil {
 			return nil, err
 		}
 
+		// read from stdout
 		if result := read(g, commands.Timeout); err == nil {
 
-			ans := strings.Split(result, "\r\n")
-			results = append(results, ans...)
+			results[cmd] = textProcessFunc(result)
+
 		} else {
 			return nil, err
 		}
@@ -131,8 +157,10 @@ func (g *Gossh) run(commands CliCommands) ([]string, error) {
 	return results, nil
 }
 
-func read(g *Gossh, timout time.Duration) string {
-	tk := time.NewTicker(timout)
+func read(g *Gossh, timeout time.Duration) string {
+
+	// read timeout ticker
+	tk := time.NewTicker(timeout)
 	ans := ""
 
 	for {
@@ -140,28 +168,41 @@ func read(g *Gossh, timout time.Duration) string {
 		// Timeout timer, break loop when timer is <-
 		case <-tk.C:
 			return ans
+
 		// continue read from std
 		default:
-			read, err := readOnce(g)
+			stream, err := readOnce(g, func(s string) string {
+
+				// optional function
+				res := strings.Replace(s, " ", "", 0)
+				if res == "" {
+					return ""
+				}
+				return s
+
+			})
 			if err != nil {
 				return ""
 			}
-			ans += read
+
+			ans += stream
 
 			// check stdout finished output
-			if checkIfEnd(read) {
+			if checkIfEnd(stream) {
 				tmp := ans
 				ans = ""
 				return tmp
 			}
-			time.Sleep(time.Millisecond * 10)
+			time.Sleep(defaultReadGapTime)
+
 		}
 	}
 }
 
-func readOnce(g *Gossh) (string, error) {
+// read from std fd
+func readOnce(g *Gossh, filter func(string) string) (string, error) {
 	ans := ""
-	buf := make([]byte, 512)
+	buf := make([]byte, 1024)
 	n, stdoutErr := g.stdout.Read(buf)
 
 	if stdoutErr != nil {
@@ -169,20 +210,26 @@ func readOnce(g *Gossh) (string, error) {
 	}
 
 	if n > 0 {
-		rawStr := string(buf[:n])
-		ans += fmt.Sprintf("%s", rawStr)
-		return ans, nil
+		//fmt.Println("[" + string(buf) + "]")
+		//fmt.Println("{" + string(buf[:n]) + "}")
+		str := string(buf[:n])
+		res := filter(str)
+		res = strings.Trim(res, " ")
+
+		return res, nil
 	}
 	return "", nil
 }
 
 // return stdin, stdout, stderr
 func redirectStd(g *Gossh) (err error) {
-	fd := 0
-	_, err = terminal.MakeRaw(fd)
-	if err != nil {
-		return err
-	}
+
+	// ??? what the fuck
+	//fd := 0
+	//_, err = terminal.MakeRaw(fd)
+	//if err != nil {
+	//	return errors.New(err.Error() + "make raw")
+	//}
 
 	// termWidth, termHeight affect to the output strings length, width
 	// termType affect to the style of the
@@ -190,25 +237,31 @@ func redirectStd(g *Gossh) (err error) {
 
 	err = g.session.RequestPty(termType, termHeight, termWidth, ssh.TerminalModes{})
 	if err != nil {
-		return err
+		return errors.New(err.Error() + "RequestPty")
 	}
 
 	// redirect std
 	g.stdin, err = g.session.StdinPipe()
 	if err != nil {
-		return err
+		return errors.New(err.Error() + "StdinPipe")
 	}
 
 	g.stdout, err = g.session.StdoutPipe()
 	if err != nil {
-		return err
+		return errors.New(err.Error() + "StdoutPipe")
 
 	}
+
 	g.stderr, err = g.session.StderrPipe()
+	if err != nil {
+		return errors.New(err.Error() + "StderrPipe")
+
+	}
 
 	err = g.session.Shell()
 	if err != nil {
-		return err
+		return errors.New(err.Error() + "Shell")
+
 	}
 
 	return nil
@@ -216,47 +269,10 @@ func redirectStd(g *Gossh) (err error) {
 
 func checkIfEnd(str string) bool {
 	str = strings.TrimRight(str, " ")
-	for _, end := range []byte{'#'} {
+	for _, end := range []byte{'#', ']'} {
 		if strings.Index(str, string(end)) != -1 {
 			return true
 		}
 	}
 	return false
-}
-
-func main() {
-
-	cfg := ssh.ClientConfig{
-		User: "",
-		Auth: []ssh.AuthMethod{
-			ssh.Password(""),
-		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-	}
-
-	ssh := NewSSHClient("", 22, &cfg)
-
-	loginInfo, err := ssh.Connect()
-
-	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(0)
-	}
-
-	fmt.Print(loginInfo)
-
-	res, err := ssh.Exec(CliCommands{
-		Command: []string{
-			"docker ps",
-		},
-		Timeout: time.Duration(5000) * time.Millisecond,
-	})
-
-	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(0)
-	}
-
-	fmt.Println(res)
-
 }
