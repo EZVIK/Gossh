@@ -13,11 +13,11 @@ func Test_Gossh(t *testing.T) {
 	cfg := ssh.ClientConfig{
 		User: "root",
 		Auth: []ssh.AuthMethod{
-			ssh.Password("Elish8281"),
+			ssh.Password("password"),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
-	gossh := sshx.NewSSHClient("159.75.82.148", 22, &cfg)
+	gossh := sshx.NewSSHClient("192.168.0.1", 22, &cfg)
 
 	loginInfo, err := gossh.Connect()
 	if err != nil {
